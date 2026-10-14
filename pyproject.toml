@@ -1,0 +1,36 @@
+[project]
+name = "mediashrink"
+version = "0.1.0"
+description = "Transcode and shrink video, audio, image and PDF files."
+readme = "README.md"
+authors = [
+    { name = "easyliu", email = "ext.easyliu@tjsports.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pikepdf>=10.17.0",
+    "pillow>=12.3.0",
+    "typer>=0.27.3",
+]
+
+[project.scripts]
+mediashrink = "mediashrink:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

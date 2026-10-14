@@ -1,0 +1,16 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Tool output / local media
+*.min.*
+.pytest_cache/
+.ruff_cache/
+.DS_Store
