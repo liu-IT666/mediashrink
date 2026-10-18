@@ -23,6 +23,7 @@ mediashrink pdf scan.pdf -q 60 --max-image-size 1600
 mediashrink info in.mp4
 ```
 By default, output is written next to the input as `<name>.min.<ext>`. Existing files are never overwritten unless you pass `-y`.
+If a result is not smaller than its input it is discarded; pass `--keep-larger` to keep it anyway (e.g. for a format conversion). A failed or interrupted run never leaves a partial output file behind.
 
 ## Development
 ```bash
