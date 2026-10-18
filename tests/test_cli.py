@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 
@@ -149,3 +150,70 @@ def test_video_metadata_stripped_by_default(tmp_path: Path):
 
     assert runner.invoke(app, [*base, "--keep-metadata"]).exit_code == 0
     assert "location" in ffmpeg.probe(tmp_path / "a.min.mp4")["format"]["tags"]
+
+
+def _noise(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.effect_noise((300, 200), 64).convert("RGB").save(path)
+    return path
+
+
+def test_directory_input(tmp_path: Path):
+    d = tmp_path / "in"
+    _noise(d / "a.png")
+    _noise(d / "sub" / "b.png")
+    (d / "readme.txt").write_text("skip me")
+    out = tmp_path / "out"
+    result = runner.invoke(app, ["image", str(d), "-f", "webp", "-o", str(out)])
+    assert result.exit_code == 0, result.output
+    assert sorted(p.relative_to(out).as_posix() for p in out.rglob("*")) == ["a.webp"]
+    result = runner.invoke(app, ["image", str(d), "-r", "-f", "webp", "-o", str(out), "-y"])
+    assert result.exit_code == 0, result.output
+    assert sorted(p.relative_to(out).as_posix() for p in out.rglob("*.webp")) == ["a.webp", "sub/b.webp"]
+    assert "2 files: 2 compressed" in _flat(result.output)
+
+
+def test_directory_input_next_to_sources_is_rerunnable(tmp_path: Path):
+    d = tmp_path / "in"
+    _noise(d / "a.png")
+    assert runner.invoke(app, ["image", str(d), "-f", "webp"]).exit_code == 0
+    result = runner.invoke(app, ["image", str(d), "-f", "webp", "-y"])
+    assert result.exit_code == 0, result.output
+    assert sorted(p.name for p in d.iterdir()) == ["a.min.webp", "a.png"]  # a.min.webp was not taken as input
+
+
+def _flat(output: str) -> str:
+    """Error text without colors or the box rich draws around it (it wraps long lines)."""
+    output = re.sub(r"\x1b\[[0-9;]*m", "", output)  # rich colors output on CI (GITHUB_ACTIONS is set)
+    return " ".join(w for w in output.split() if w.strip("│╭╮╰╯─"))
+
+
+def test_directory_input_errors(tmp_path: Path):
+    d = tmp_path / "in"
+    _noise(d / "a.png")
+    result = runner.invoke(app, ["image", str(d), "-o", str(tmp_path / "x.jpg")])
+    assert result.exit_code == 2 and "--output must be a" in _flat(result.output)
+    (tmp_path / "empty").mkdir()
+    result = runner.invoke(app, ["pdf", str(tmp_path / "empty")])
+    assert result.exit_code == 2 and "No files with a supported extension" in _flat(result.output)
+
+
+def test_jobs_parallel_batch_with_summary(tmp_path: Path):
+    srcs = [str(_noise(tmp_path / f"{n}.png")) for n in "abcd"]
+    bad = tmp_path / "bad.png"
+    bad.write_text("not an image")
+    result = runner.invoke(app, ["image", *srcs, str(bad), "-f", "webp", "-j", "3", "-o", str(tmp_path / "out")])
+    assert result.exit_code == 1
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["a.webp", "b.webp", "c.webp", "d.webp"]
+    assert "5 files: 4 compressed, 1 failed" in _flat(result.output)
+    assert "saved" in _flat(result.output)
+
+
+def test_jobs_keeps_collision_order(tmp_path: Path):
+    # Same as test_batch_output_collision, in parallel: the first input still wins.
+    _noise(tmp_path / "a.png")
+    _low_quality_jpeg(tmp_path / "a.jpg")
+    args = ["image", str(tmp_path / "a.png"), str(tmp_path / "a.jpg"), "-f", "jpg", "-y", "-j", "2"]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 1
+    assert "a.jpg: same output as a.png" in result.output

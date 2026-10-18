@@ -42,29 +42,67 @@ def is_dir_target(output: Path) -> bool:
     return output.is_dir() or (not output.exists() and not output.suffix)
 
 
-def output_path(src: Path, output: Path | None, suffix: str) -> Path:
+def output_path(src: Path, output: Path | None, suffix: str, subdir: Path = Path()) -> Path:
     """Pick the output path (no checks).
 
-    - `output` is a directory (see `is_dir_target`) -> <output>/<stem><suffix>
+    - `output` is a directory (see `is_dir_target`) -> <output>/<subdir>/<stem><suffix>
+      (`subdir` is where `src` sits inside a directory input, see `collect_inputs`)
     - `output` is a file path -> used as-is
     - no `output` -> <src dir>/<stem>.min<suffix>
     """
     if output is None:
         return src.with_name(f"{src.stem}.min{suffix}")
     if is_dir_target(output):
-        return output / f"{src.stem}{suffix}"
+        return output / subdir / f"{src.stem}{suffix}"
     return output
 
 
-def resolve_output(src: Path, output: Path | None, suffix: str, overwrite: bool = False) -> Path:
+def resolve_output(src: Path, output: Path | None, suffix: str, overwrite: bool = False, subdir: Path = Path()) -> Path:
     """`output_path()`, refusing to overwrite the input, or an existing file unless `overwrite`."""
-    dst = output_path(src, output, suffix)
+    dst = output_path(src, output, suffix, subdir)
     if dst.resolve() == src.resolve():
         raise ValueError(f"Output would overwrite the input file: {src}")
     if dst.exists() and not overwrite:
         raise FileExistsError(f"Output already exists (use --overwrite): {dst}")
     dst.parent.mkdir(parents=True, exist_ok=True)
     return dst
+
+
+def collect_inputs(
+    inputs: list[Path], exts: set[str], recursive: bool = False, exclude: Path | None = None
+) -> list[tuple[Path, Path]]:
+    """Expand directory inputs into `(file, subdir)` pairs; files are passed through as `(file, .)`.
+
+    In a directory, only files whose extension is in `exts` are taken, in name order,
+    skipping hidden files and directories, earlier outputs (`*.min.*`) and anything under
+    `exclude` (the output directory). Subdirectories are walked only when `recursive`;
+    `subdir` is then the file's directory relative to the input directory, so a directory
+    `-o` mirrors the input tree. A file reached twice is kept once.
+    """
+    skip = exclude.resolve() if exclude is not None else None
+    seen: set[Path] = set()
+    found: list[tuple[Path, Path]] = []
+
+    def add(path: Path, subdir: Path) -> None:
+        key = path.resolve()
+        if key not in seen:
+            seen.add(key)
+            found.append((path, subdir))
+
+    for item in inputs:
+        if not item.is_dir():
+            add(item, Path())
+            continue
+        walk = sorted(item.rglob("*") if recursive else item.iterdir())
+        for path in walk:
+            rel = path.relative_to(item)
+            if any(part.startswith(".") for part in rel.parts) or not path.is_file():
+                continue
+            if skip is not None and path.resolve().is_relative_to(skip):
+                continue
+            if path.suffix.lower() in exts and not path.stem.endswith(".min"):
+                add(path, rel.parent)
+    return found
 
 
 def temp_path(dst: Path) -> Path:
