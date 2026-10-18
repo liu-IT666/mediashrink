@@ -27,6 +27,12 @@ def probe(path: Path) -> dict:
     return json.loads(out.stdout)
 
 
+def metadata_args(strip: bool) -> list[str]:
+    """Container-level tags (GPS location, device, creation time, title...) are dropped when
+    `strip`; per-stream tags such as audio language are kept either way."""
+    return ["-map_metadata:g", "-1"] if strip else ["-map_metadata", "0"]
+
+
 def run(args: list[str]) -> None:
     """Run ffmpeg with the given args (input/output included)."""
     proc = subprocess.run(

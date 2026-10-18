@@ -14,6 +14,15 @@ def test_video_args_h265_mp4():
     assert "scale=-2:'min(720,ih)'" in args
 
 
+def test_metadata_args():
+    v = video.build_args(Path("in.mov"), Path("out.mp4"), video.VideoOptions())
+    a = audio.build_args(Path("in.wav"), Path("out.m4a"), audio.AudioOptions())
+    for args in (v, a):
+        assert args[args.index("-map_metadata:g") + 1] == "-1" and "-map_metadata" not in args
+    kept = audio.build_args(Path("in.wav"), Path("out.m4a"), audio.AudioOptions(strip_metadata=False))
+    assert kept[kept.index("-map_metadata") + 1] == "0"
+
+
 def test_audio_args_flac_has_no_bitrate():
     args = audio.build_args(Path("in.wav"), Path("out.flac"), audio.AudioOptions())
     assert "-b:a" not in args

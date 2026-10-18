@@ -11,7 +11,7 @@ import typer
 from rich.console import Console
 
 from mediashrink import audio, ffmpeg, image, pdf, video
-from mediashrink.common import Result, atomic_output, human_size, output_path, resolve_output
+from mediashrink.common import Result, atomic_output, human_size, is_dir_target, output_path, resolve_output
 
 app = typer.Typer(
     help="Transcode and shrink video, audio, image and PDF files.",
@@ -23,9 +23,16 @@ console = Console()
 Inputs = Annotated[list[Path], typer.Argument(exists=True, dir_okay=False, help="Input file(s).")]
 Output = Annotated[
     Path | None,
-    typer.Option("--output", "-o", help="Output file, or directory for multiple inputs. Default: <name>.min.<ext>"),
+    typer.Option(
+        "--output",
+        "-o",
+        help="Output file, or directory (created if missing). Default: <name>.min.<ext> next to input.",
+    ),
 ]
 Overwrite = Annotated[bool, typer.Option("--overwrite", "-y", help="Overwrite existing output files.")]
+KeepMetadata = Annotated[
+    bool, typer.Option("--keep-metadata", help="Keep metadata (GPS location, device, dates, tags...).")
+]
 KeepLarger = Annotated[
     bool, typer.Option("--keep-larger", help="Keep the output even if it is not smaller than the input.")
 ]
@@ -43,8 +50,8 @@ def _process(
     action: Callable[[Path, Path], None],
     keep_larger: bool = False,
 ) -> None:
-    if len(inputs) > 1 and output is not None and not output.is_dir():
-        raise typer.BadParameter("With multiple inputs, --output must be an existing directory.")
+    if len(inputs) > 1 and output is not None and not is_dir_target(output):
+        raise typer.BadParameter("With multiple inputs, --output must be a directory.")
     failed = 0
     claimed: dict[Path, Path] = {}  # resolved output -> input that wrote it in this run
     for src in inputs:
@@ -106,9 +113,10 @@ def video_cmd(
     fps: Annotated[float | None, typer.Option(help="Output frame rate.")] = None,
     audio_bitrate: Annotated[str, typer.Option("--audio-bitrate", help="e.g. 96k, 128k.")] = "128k",
     no_audio: Annotated[bool, typer.Option("--no-audio", help="Drop the audio track.")] = False,
+    keep_metadata: KeepMetadata = False,
 ) -> None:
     """Transcode / compress video files."""
-    opts = video.VideoOptions(codec, crf, preset, max_height, fps, audio_bitrate, no_audio)
+    opts = video.VideoOptions(codec, crf, preset, max_height, fps, audio_bitrate, no_audio, not keep_metadata)
     default = ".webm" if codec == "vp9" else ".mp4"
     _process(
         inputs, output, overwrite, _ext(fmt, lambda _s: default), lambda s, d: video.compress(s, d, opts), keep_larger
@@ -127,9 +135,10 @@ def audio_cmd(
     bitrate: Annotated[str, typer.Option("--bitrate", "-b", help="e.g. 64k, 128k, 192k.")] = "128k",
     sample_rate: Annotated[int | None, typer.Option("--sample-rate", help="e.g. 44100, 22050.")] = None,
     mono: Annotated[bool, typer.Option(help="Downmix to mono.")] = False,
+    keep_metadata: KeepMetadata = False,
 ) -> None:
     """Transcode / compress audio files."""
-    opts = audio.AudioOptions(bitrate, sample_rate, mono)
+    opts = audio.AudioOptions(bitrate, sample_rate, mono, not keep_metadata)
     _process(
         inputs, output, overwrite, _ext(fmt, lambda s: s.suffix), lambda s, d: audio.compress(s, d, opts), keep_larger
     )
@@ -146,7 +155,7 @@ def image_cmd(
     ] = None,
     quality: Annotated[int, typer.Option("--quality", "-q", min=1, max=100)] = 80,
     max_size: Annotated[int | None, typer.Option("--max-size", help="Longest edge in px, e.g. 1920.")] = None,
-    keep_metadata: Annotated[bool, typer.Option("--keep-metadata", help="Keep EXIF data.")] = False,
+    keep_metadata: KeepMetadata = False,
 ) -> None:
     """Convert / compress image files."""
     opts = image.ImageOptions(quality, max_size, not keep_metadata)

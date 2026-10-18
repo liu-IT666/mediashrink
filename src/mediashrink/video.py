@@ -45,6 +45,7 @@ class VideoOptions:
     fps: float | None = None
     audio_bitrate: str = "128k"
     strip_audio: bool = False
+    strip_metadata: bool = True  # see ffmpeg.metadata_args
 
 
 def build_args(src: Path, dst: Path, opts: VideoOptions) -> list[str]:
@@ -62,7 +63,7 @@ def build_args(src: Path, dst: Path, opts: VideoOptions) -> list[str]:
     crf = opts.crf if opts.crf is not None else default_crf
     av1_preset, vp9_cpu_used = PRESETS[opts.preset]
 
-    args = ["-y", "-i", str(src), "-map_metadata", "0", "-c:v", encoder, "-crf", str(crf)]
+    args = ["-y", "-i", str(src), *ffmpeg.metadata_args(opts.strip_metadata), "-c:v", encoder, "-crf", str(crf)]
     if opts.codec == "vp9":
         # constant-quality mode; libvpx has no named presets, -cpu-used trades speed for quality
         args += ["-b:v", "0", "-deadline", "good", "-cpu-used", str(vp9_cpu_used)]

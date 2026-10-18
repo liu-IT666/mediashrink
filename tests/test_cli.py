@@ -1,8 +1,10 @@
+import subprocess
 from pathlib import Path
 
 from PIL import Image
 from typer.testing import CliRunner
 
+from mediashrink import ffmpeg
 from mediashrink.cli import app
 from tests.conftest import requires_ffmpeg
 
@@ -113,3 +115,37 @@ def test_auto_animated_gif_to_webp(tmp_path: Path):
     assert result.exit_code == 0, result.output
     with Image.open(tmp_path / "a.min.webp") as im:
         assert im.n_frames == 4
+
+
+def test_batch_into_missing_output_dir(tmp_path: Path):
+    srcs = []
+    for name in ("a", "b"):
+        Image.effect_noise((300, 200), 64).convert("RGB").save(tmp_path / f"{name}.png")
+        srcs.append(str(tmp_path / f"{name}.png"))
+    result = runner.invoke(app, ["image", *srcs, "-f", "webp", "-o", f"{tmp_path / 'out'}/"])
+    assert result.exit_code == 0, result.output
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["a.webp", "b.webp"]
+
+
+def _tagged_video(path: Path) -> Path:
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=128x96:rate=10:duration=0.5",
+         "-f", "lavfi", "-i", "sine=duration=0.5", "-c:v", "mpeg4", "-c:a", "aac", "-shortest",
+         "-metadata", "location=+39.9000+116.4000/", "-metadata:s:a:0", "language=jpn", str(path)],
+        check=True,
+    )  # fmt: skip
+    return path
+
+
+@requires_ffmpeg
+def test_video_metadata_stripped_by_default(tmp_path: Path):
+    src = _tagged_video(tmp_path / "a.mp4")
+    base = ["video", str(src), "-c", "h264", "--preset", "ultrafast", "--keep-larger", "-y"]
+    assert runner.invoke(app, base).exit_code == 0
+    info = ffmpeg.probe(tmp_path / "a.min.mp4")
+    assert "location" not in info["format"].get("tags", {})  # GPS gone
+    audio_tags = next(s for s in info["streams"] if s["codec_type"] == "audio")["tags"]
+    assert audio_tags["language"] == "jpn"  # per-stream tags players rely on are kept
+
+    assert runner.invoke(app, [*base, "--keep-metadata"]).exit_code == 0
+    assert "location" in ffmpeg.probe(tmp_path / "a.min.mp4")["format"]["tags"]

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from mediashrink.common import atomic_output, human_size, resolve_output, temp_path
+from mediashrink.common import atomic_output, human_size, is_dir_target, resolve_output, temp_path
 
 
 def test_default_output_name(tmp_path: Path):
@@ -57,3 +57,20 @@ def test_atomic_output_cleans_up_on_error(tmp_path: Path):
         raise RuntimeError("encoder failed")
     assert dst.read_text() == "old"  # previous output untouched
     assert not temp_path(dst).exists()
+
+
+def test_missing_output_dir_without_extension_is_created(tmp_path: Path):
+    # `-o out/` reaches us as Path("out"): pathlib drops the trailing slash.
+    src = tmp_path / "a.png"
+    src.touch()
+    out = tmp_path / "out"
+    assert resolve_output(src, Path(f"{out}/"), ".jpg") == out / "a.jpg"
+    assert out.is_dir()
+
+
+def test_is_dir_target(tmp_path: Path):
+    assert is_dir_target(tmp_path)  # existing dir
+    assert is_dir_target(tmp_path / "new")  # missing, no extension
+    assert not is_dir_target(tmp_path / "new.mp4")  # missing file path
+    (tmp_path / "plain").touch()
+    assert not is_dir_target(tmp_path / "plain")  # existing file

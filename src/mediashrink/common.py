@@ -33,16 +33,25 @@ def human_size(n: float) -> str:
     return f"{n:.1f} TB"
 
 
+def is_dir_target(output: Path) -> bool:
+    """`--output` names a directory: an existing one, or a new path without an extension.
+
+    (`-o out/` arrives here as `out`: pathlib drops the trailing slash. An output *file*
+    without an extension is useless anyway, since encoders pick the format from it.)
+    """
+    return output.is_dir() or (not output.exists() and not output.suffix)
+
+
 def output_path(src: Path, output: Path | None, suffix: str) -> Path:
     """Pick the output path (no checks).
 
-    - `output` is a directory -> <output>/<stem><suffix>
+    - `output` is a directory (see `is_dir_target`) -> <output>/<stem><suffix>
     - `output` is a file path -> used as-is
     - no `output` -> <src dir>/<stem>.min<suffix>
     """
     if output is None:
         return src.with_name(f"{src.stem}.min{suffix}")
-    if output.is_dir():
+    if is_dir_target(output):
         return output / f"{src.stem}{suffix}"
     return output
 
@@ -59,8 +68,8 @@ def resolve_output(src: Path, output: Path | None, suffix: str, overwrite: bool 
 
 
 def temp_path(dst: Path) -> Path:
-    """Hidden sibling of `dst` that keeps its extension (encoders pick the format from it)."""
-    return dst.with_name(f".{dst.stem}.part{dst.suffix}")
+    """Hidden sibling of `dst` with the same extension (encoders pick the format from it)."""
+    return dst.with_name(f".part-{dst.name}")
 
 
 @contextmanager
