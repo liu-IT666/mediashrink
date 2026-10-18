@@ -1,5 +1,8 @@
 """Shared helpers: output path resolution and size reporting."""
 
+import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,3 +52,24 @@ def resolve_output(src: Path, output: Path | None, suffix: str, overwrite: bool 
         raise FileExistsError(f"Output already exists (use --overwrite): {dst}")
     dst.parent.mkdir(parents=True, exist_ok=True)
     return dst
+
+
+def temp_path(dst: Path) -> Path:
+    """Hidden sibling of `dst` that keeps its extension (encoders pick the format from it)."""
+    return dst.with_name(f".{dst.stem}.part{dst.suffix}")
+
+
+@contextmanager
+def atomic_output(dst: Path) -> Iterator[Path]:
+    """Yield a temp path to write to; it replaces `dst` only if the block succeeds.
+
+    On any error (including Ctrl+C) the temp file is removed, so a failed run never
+    leaves a truncated `dst` behind.
+    """
+    tmp = temp_path(dst)
+    try:
+        yield tmp
+        if tmp.exists():
+            os.replace(tmp, dst)
+    finally:
+        tmp.unlink(missing_ok=True)

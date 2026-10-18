@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from mediashrink.common import human_size, resolve_output
+from mediashrink.common import atomic_output, human_size, resolve_output, temp_path
 
 
 def test_default_output_name(tmp_path: Path):
@@ -38,3 +38,22 @@ def test_refuses_existing_without_flag(tmp_path: Path):
 def test_human_size():
     assert human_size(512) == "512.0 B"
     assert human_size(1536) == "1.5 KB"
+
+
+def test_atomic_output_replaces_on_success(tmp_path: Path):
+    dst = tmp_path / "a.min.jpg"
+    with atomic_output(dst) as tmp:
+        assert tmp.suffix == ".jpg" and tmp != dst
+        tmp.write_text("new")
+    assert dst.read_text() == "new"
+    assert list(tmp_path.iterdir()) == [dst]
+
+
+def test_atomic_output_cleans_up_on_error(tmp_path: Path):
+    dst = tmp_path / "a.min.jpg"
+    dst.write_text("old")
+    with pytest.raises(RuntimeError), atomic_output(dst) as tmp:
+        tmp.write_text("partial")
+        raise RuntimeError("encoder failed")
+    assert dst.read_text() == "old"  # previous output untouched
+    assert not temp_path(dst).exists()
