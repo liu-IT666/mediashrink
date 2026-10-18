@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 
@@ -169,7 +170,7 @@ def test_directory_input(tmp_path: Path):
     result = runner.invoke(app, ["image", str(d), "-r", "-f", "webp", "-o", str(out), "-y"])
     assert result.exit_code == 0, result.output
     assert sorted(p.relative_to(out).as_posix() for p in out.rglob("*.webp")) == ["a.webp", "sub/b.webp"]
-    assert "2 files: 2 compressed" in result.output
+    assert "2 files: 2 compressed" in _flat(result.output)
 
 
 def test_directory_input_next_to_sources_is_rerunnable(tmp_path: Path):
@@ -182,8 +183,9 @@ def test_directory_input_next_to_sources_is_rerunnable(tmp_path: Path):
 
 
 def _flat(output: str) -> str:
-    """Error text without the box rich draws around it (it wraps long lines)."""
-    return " ".join(w for w in output.split() if w not in "│╭╮╰╯─")
+    """Error text without colors or the box rich draws around it (it wraps long lines)."""
+    output = re.sub(r"\x1b\[[0-9;]*m", "", output)  # rich colors output on CI (GITHUB_ACTIONS is set)
+    return " ".join(w for w in output.split() if w.strip("│╭╮╰╯─"))
 
 
 def test_directory_input_errors(tmp_path: Path):
@@ -203,8 +205,8 @@ def test_jobs_parallel_batch_with_summary(tmp_path: Path):
     result = runner.invoke(app, ["image", *srcs, str(bad), "-f", "webp", "-j", "3", "-o", str(tmp_path / "out")])
     assert result.exit_code == 1
     assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["a.webp", "b.webp", "c.webp", "d.webp"]
-    assert "5 files: 4 compressed, 1 failed" in result.output
-    assert "saved" in result.output
+    assert "5 files: 4 compressed, 1 failed" in _flat(result.output)
+    assert "saved" in _flat(result.output)
 
 
 def test_jobs_keeps_collision_order(tmp_path: Path):
