@@ -21,13 +21,14 @@ class AudioOptions:
     bitrate: str = "128k"
     sample_rate: int | None = None
     mono: bool = False
+    strip_metadata: bool = True  # see ffmpeg.metadata_args; drops ID3 / Vorbis tags too
 
 
 def build_args(src: Path, dst: Path, opts: AudioOptions) -> list[str]:
     ext = dst.suffix.lower()
     if ext not in AUDIO_FORMATS:
         raise ValueError(f"Unsupported audio format {ext!r}; choose from {', '.join(AUDIO_FORMATS)}")
-    args = ["-y", "-i", str(src), "-vn", "-map_metadata", "0", "-c:a", AUDIO_FORMATS[ext]]
+    args = ["-y", "-i", str(src), "-vn", *ffmpeg.metadata_args(opts.strip_metadata), "-c:a", AUDIO_FORMATS[ext]]
     if ext != ".flac":  # flac is lossless; bitrate does not apply
         args += ["-b:a", opts.bitrate]
     if opts.sample_rate:

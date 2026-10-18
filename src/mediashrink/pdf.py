@@ -26,6 +26,8 @@ def _shrink_images(pdf: pikepdf.Pdf, opts: PdfOptions) -> None:
                 im = pdf_image.as_pil_image()
             except Exception:
                 continue  # unsupported colorspace / filter: leave untouched
+            if im.mode == "P" and im.palette.mode in ("RGB", "L"):
+                im = im.convert(im.palette.mode)  # Indexed: expand the palette (JPEG has none)
             if raw.get("/SMask") is not None or im.mode not in ("RGB", "L"):
                 continue  # transparency / exotic modes: re-encoding as JPEG would break them
 
