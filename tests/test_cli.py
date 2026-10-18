@@ -59,8 +59,8 @@ def test_keep_larger(tmp_path: Path):
 
 @requires_ffmpeg
 def test_failed_encode_leaves_no_output(sample_video: Path):
-    # h265 cannot go into webm: ffmpeg fails after it has already created the output file.
-    args = ["video", str(sample_video), "-c", "h265", "-f", "webm"]
+    # An invalid bitrate makes ffmpeg fail after it has already created the output file.
+    args = ["video", str(sample_video), "-c", "h264", "--preset", "ultrafast", "--audio-bitrate", "abc"]
     result = runner.invoke(app, args)
     assert result.exit_code == 1
     assert sorted(p.name for p in sample_video.parent.iterdir()) == ["sample.mov"]
@@ -76,3 +76,40 @@ def test_info_reports_probe_error(tmp_path: Path):
     result = runner.invoke(app, ["info", str(src)])
     assert result.exit_code == 1
     assert isinstance(result.exception, SystemExit), result.exception
+
+
+def test_batch_output_collision(tmp_path: Path):
+    # a.png and a.jpg both default to a.min.jpg: the second must not overwrite the first, even with -y.
+    Image.effect_noise((400, 300), 64).convert("RGB").save(tmp_path / "a.png")
+    _low_quality_jpeg(tmp_path / "a.jpg")
+    result = runner.invoke(app, ["image", str(tmp_path / "a.png"), str(tmp_path / "a.jpg"), "-f", "jpg", "-y"])
+    assert result.exit_code == 1
+    assert "same output as a.png" in result.output
+    assert (tmp_path / "a.min.jpg").exists()
+
+
+def test_collision_ignores_input_that_wrote_nothing(tmp_path: Path):
+    bad = tmp_path / "a.png"
+    bad.write_text("not an image")
+    Image.effect_noise((400, 300), 64).convert("RGB").save(tmp_path / "a.bmp")
+    result = runner.invoke(app, ["image", str(bad), str(tmp_path / "a.bmp"), "-f", "jpg"])
+    assert result.exit_code == 1  # a.png failed...
+    assert (tmp_path / "a.min.jpg").exists()  # ...so a.bmp may still write a.min.jpg
+
+
+def test_video_rejects_codec_container_mismatch_early(tmp_path: Path):
+    src = tmp_path / "a.mov"
+    src.write_bytes(b"not even a video")  # never reaches ffmpeg
+    result = runner.invoke(app, ["video", str(src), "-c", "h265", "-f", "webm"])
+    assert result.exit_code == 1
+    assert "h265 cannot be stored in .webm" in result.output
+
+
+def test_auto_animated_gif_to_webp(tmp_path: Path):
+    src = tmp_path / "a.gif"
+    frames = [Image.effect_noise((200, 150), 40 + 10 * i).convert("P") for i in range(4)]
+    frames[0].save(src, save_all=True, append_images=frames[1:], duration=80, loop=0)
+    result = runner.invoke(app, ["auto", str(src), "--keep-larger"])
+    assert result.exit_code == 0, result.output
+    with Image.open(tmp_path / "a.min.webp") as im:
+        assert im.n_frames == 4

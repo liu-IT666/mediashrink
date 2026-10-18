@@ -10,8 +10,8 @@ Python CLI for transcoding and shrinking video, audio, image and PDF files.
 
 ## Layout
 - `src/mediashrink/cli.py` — Typer app; one subcommand per media type plus `auto` and `info`. `_process()` handles output paths, batch inputs and the size report; it writes through `common.atomic_output()` (temp file, renamed on success) and discards outputs that are not smaller unless `--keep-larger`.
-- `video.py` / `audio.py` — build ffmpeg argument lists (`build_args`) and run them through `ffmpeg.py`. Keep arg-building pure so it can be unit-tested without ffmpeg.
-- `image.py` — Pillow (JPEG/PNG/WebP/AVIF).
+- `video.py` / `audio.py` — build ffmpeg argument lists (`build_args`) and run them through `ffmpeg.py`. Keep arg-building pure so it can be unit-tested without ffmpeg. `video.CONTAINER_CODECS` lists which codecs each container accepts (verified against ffmpeg); `video.PRESETS` maps x264-style preset names onto svt-av1 / libvpx-vp9 speed settings.
+- `image.py` — Pillow (JPEG/PNG/WebP/AVIF out; HEIC/HEIF in via `pillow-heif`). Animated GIF/APNG/WebP/AVIF inputs keep all frames when the output format can hold them.
 - `pdf.py` — pikepdf; re-encodes embedded RGB/gray images as JPEG and recompresses streams. Ghostscript is intentionally not a dependency.
 - `common.py` — output path resolution (`<name>.min.<ext>` by default, never overwrites the input).
 

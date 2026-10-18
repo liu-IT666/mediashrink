@@ -11,7 +11,7 @@ import typer
 from rich.console import Console
 
 from mediashrink import audio, ffmpeg, image, pdf, video
-from mediashrink.common import Result, atomic_output, human_size, resolve_output
+from mediashrink.common import Result, atomic_output, human_size, output_path, resolve_output
 
 app = typer.Typer(
     help="Transcode and shrink video, audio, image and PDF files.",
@@ -32,7 +32,7 @@ KeepLarger = Annotated[
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".flv", ".wmv"}
 AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus", ".wma"}
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".bmp", ".tif", ".tiff", ".heic", ".gif"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".bmp", ".tif", ".tiff", ".heic", ".heif", ".gif"}
 
 
 def _process(
@@ -46,9 +46,14 @@ def _process(
     if len(inputs) > 1 and output is not None and not output.is_dir():
         raise typer.BadParameter("With multiple inputs, --output must be an existing directory.")
     failed = 0
+    claimed: dict[Path, Path] = {}  # resolved output -> input that wrote it in this run
     for src in inputs:
         try:
-            dst = resolve_output(src, output, suffix_for(src), overwrite)
+            suffix = suffix_for(src)
+            key = output_path(src, output, suffix).resolve()
+            if key in claimed:  # e.g. a.png and a.jpg both -> a.min.jpg
+                raise ValueError(f"same output as {claimed[key].name}: {key.name}; use separate runs or --output")
+            dst = resolve_output(src, output, suffix, overwrite)
             with atomic_output(dst) as tmp:
                 with console.status(f"Processing {src.name}..."):
                     action(src, tmp)
@@ -62,6 +67,7 @@ def _process(
                     "discarded (use --keep-larger to keep it)"
                 )
                 continue
+            claimed[key] = src
             r = Result(src, dst)
             color = "green" if r.ratio < 1 else "yellow"
             console.print(
@@ -91,7 +97,9 @@ def video_cmd(
     fmt: Annotated[str | None, typer.Option("--format", "-f", help="Container: mp4, mkv, webm, mov.")] = None,
     codec: Annotated[str, typer.Option("--codec", "-c", help=f"One of: {', '.join(video.VIDEO_CODECS)}.")] = "h265",
     crf: Annotated[int | None, typer.Option(help="Quality (lower = better/bigger). Default depends on codec.")] = None,
-    preset: Annotated[str, typer.Option(help="x264/x265 speed preset (ultrafast … veryslow).")] = "medium",
+    preset: Annotated[
+        str, typer.Option(help="Speed preset (ultrafast … veryslow); mapped onto av1/vp9 speed settings.")
+    ] = "medium",
     max_height: Annotated[
         int | None, typer.Option("--max-height", help="Downscale to at most this height, e.g. 1080.")
     ] = None,
@@ -134,7 +142,7 @@ def image_cmd(
     overwrite: Overwrite = False,
     keep_larger: KeepLarger = False,
     fmt: Annotated[
-        str | None, typer.Option("--format", "-f", help="jpg, png, webp, avif. Default: keep / jpg.")
+        str | None, typer.Option("--format", "-f", help="jpg, png, webp, avif. Default: keep / webp for GIF / jpg.")
     ] = None,
     quality: Annotated[int, typer.Option("--quality", "-q", min=1, max=100)] = 80,
     max_size: Annotated[int | None, typer.Option("--max-size", help="Longest edge in px, e.g. 1920.")] = None,
@@ -142,12 +150,9 @@ def image_cmd(
 ) -> None:
     """Convert / compress image files."""
     opts = image.ImageOptions(quality, max_size, not keep_metadata)
-
-    def default(src: Path) -> str:
-        ext = src.suffix.lower()
-        return ext if ext in image.IMAGE_FORMATS else ".jpg"
-
-    _process(inputs, output, overwrite, _ext(fmt, default), lambda s, d: image.compress(s, d, opts), keep_larger)
+    _process(
+        inputs, output, overwrite, _ext(fmt, image.default_suffix), lambda s, d: image.compress(s, d, opts), keep_larger
+    )
 
 
 @app.command("pdf")
@@ -179,7 +184,7 @@ def auto_cmd(
         if ext in AUDIO_EXTS:
             return ".m4a" if ext in {".wav", ".wma", ".flac"} else ext
         if ext in IMAGE_EXTS:
-            return ext if ext in image.IMAGE_FORMATS else ".jpg"
+            return image.default_suffix(src)
         if ext == ".pdf":
             return ".pdf"
         raise ValueError(f"Unsupported file type: {ext}")

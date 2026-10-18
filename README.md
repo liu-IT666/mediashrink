@@ -25,6 +25,9 @@ mediashrink info in.mp4
 By default, output is written next to the input as `<name>.min.<ext>`. Existing files are never overwritten unless you pass `-y`.
 If a result is not smaller than its input it is discarded; pass `--keep-larger` to keep it anyway (e.g. for a format conversion). A failed or interrupted run never leaves a partial output file behind.
 
+Images: HEIC/HEIF (e.g. iPhone photos) can be read; animated GIFs default to animated WebP (all frames and timing kept).
+Video: the codec must fit the container (`webm` takes av1/vp9, `mov` takes h264/h265, `mp4`/`mkv` take all four); `--preset` also controls av1/vp9 speed.
+
 ## Development
 ```bash
 uv run pytest

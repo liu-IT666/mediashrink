@@ -33,19 +33,23 @@ def human_size(n: float) -> str:
     return f"{n:.1f} TB"
 
 
-def resolve_output(src: Path, output: Path | None, suffix: str, overwrite: bool = False) -> Path:
-    """Pick the output path.
+def output_path(src: Path, output: Path | None, suffix: str) -> Path:
+    """Pick the output path (no checks).
 
     - `output` is a directory -> <output>/<stem><suffix>
     - `output` is a file path -> used as-is
     - no `output` -> <src dir>/<stem>.min<suffix>
     """
     if output is None:
-        dst = src.with_name(f"{src.stem}.min{suffix}")
-    elif output.is_dir():
-        dst = output / f"{src.stem}{suffix}"
-    else:
-        dst = output
+        return src.with_name(f"{src.stem}.min{suffix}")
+    if output.is_dir():
+        return output / f"{src.stem}{suffix}"
+    return output
+
+
+def resolve_output(src: Path, output: Path | None, suffix: str, overwrite: bool = False) -> Path:
+    """`output_path()`, refusing to overwrite the input, or an existing file unless `overwrite`."""
+    dst = output_path(src, output, suffix)
     if dst.resolve() == src.resolve():
         raise ValueError(f"Output would overwrite the input file: {src}")
     if dst.exists() and not overwrite:
